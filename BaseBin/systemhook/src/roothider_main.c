@@ -14,7 +14,6 @@
 
 const char* HOOK_DYLIB_PATH = NULL;
 
-bool dyld_patch_global_enabled = true;
 bool dyld_patch_fallback_enabled = false;
 
 //export for PatchLoader
@@ -179,7 +178,9 @@ void trust_insert_libraries(char** envc)
 	if(!DYLD_INSERT_LIBRARIES) return;
 
 	string_enumerate_components(DYLD_INSERT_LIBRARIES, ":", ^(const char *path, bool *stop) {
-		jbclient_trust_library_recurse(path, NULL);
+		if (strcmp(path, HOOK_DYLIB_PATH) != 0) {
+			jbclient_trust_library_recurse(path, NULL);
+		}
 	});
 }
 
@@ -206,7 +207,7 @@ int roothide_systemhook___posix_spawn_prehook(pid_t *restrict pidp, const char *
 		return ret;
 	}
 
-	if(!dyld_patch_global_enabled)
+	if(!jbclient_dyld_patch_enabled())
 	{
 		trust_binary = __no_need_to_trust_now__;
 	}
@@ -219,7 +220,7 @@ int roothide_systemhook___posix_spawn_posthook(pid_t *restrict pidp, const char 
 	posix_spawnattr_t attrp = &desc->attrp;
 
 	kSpawnConfig spawnConfig = 0;
-	if(!dyld_patch_global_enabled)
+	if(!jbclient_dyld_patch_enabled())
 	{
 		spawnConfig = spawn_config_for_executable(path, argv);
 
@@ -287,7 +288,7 @@ int roothide_systemhook___posix_spawn_posthook(pid_t *restrict pidp, const char 
 		envbuf_setenv(&envc, "DYLD_IN_CACHE", "0");
 	}
 
-	if(!dyld_patch_global_enabled)
+	if(!jbclient_dyld_patch_enabled())
 	{
 		if (spawnConfig & kSpawnConfigTrust) {
 			trust_insert_libraries(envc);
@@ -460,13 +461,10 @@ void roothide_init()
 
 	HOOK_DYLIB_PATH = strdup(dyld_image_path_containing_address(&__dso_handle));
 
-	// if(parse_dyldhook_jbinfo(NULL, NULL, NULL, NULL) != 0)
-	// {
-	// 	dyld_patch_global_enabled = jbclient_dyld_patch_enabled();
-	// 	if(!dyld_patch_global_enabled) {
-	// 		dyld_patch_fallback_enabled = true;
-	// 	}
-	// }
+	if(parse_dyldhook_jbinfo(NULL, NULL, NULL, NULL) != 0)
+	{
+		dyld_patch_fallback_enabled = true;
+	}
 }
 
 void roothide_init_with_checkin(const char* rootdir)
